@@ -1,1 +1,3 @@
 
+path('<int:course_id>/submit/', submit, name='submit')
+path('course/<int:course_id>/submission/<int:submission_id>/result/', show_exam_result, name='show_exam_result')
