@@ -1,67 +1,39 @@
-
-from django.shortcuts import render, redirect
+from django.shortcuts import render, get_object_or_404
 from django.contrib.auth.decorators import login_required
-from django.contrib import messages
-from .models import Question, Choice, Submission
 
-
-@login_required
-def submit(request):
-    """
-    Handles exam submission.
-    Expects POST data with selected choices keyed by question id:
-    e.g., choice_<question_id> = <choice_id>
-    """
-    if request.method == 'POST':
-        questions = Question.objects.all()
-        correct_count = 0
-        total_score = 0
-
-        for question in questions:
-            choice_key = f"choice_{question.id}"
-            choice_id = request.POST.get(choice_key)
-
-            if not choice_id:
-                continue
-
-            selected_choice = Choice.objects.get(id=choice_id)
-            is_correct = selected_choice.is_correct
-
-            Submission.objects.create(
-                user=request.user,
-                question=question,
-                selected_choice=selected_choice,
-                is_correct=is_correct
-            )
-
-            if is_correct:
-                correct_count += 1
-                total_score += question.grade
-
-        request.session['correct_count'] = correct_count
-        request.session['total_score'] = total_score
-        request.session['total_questions'] = questions.count()
-
-        messages.success(request, "Exam submitted successfully!")
-        return redirect('show_exam_result')
-
-    questions = Question.objects.prefetch_related('choices').all()
-    return render(request, 'exam.html', {'questions': questions})
-
+from .models import Course, Question, Choice, Submission
 
 @login_required
-def show_exam_result(request):
-    """
-    Displays exam result summary.
-    """
-    correct_count = request.session.get('correct_count', 0)
-    total_score = request.session.get('total_score', 0)
-    total_questions = request.session.get('total_questions', 0)
+def submit(request, course_id):
+    course = get_object_or_404(Course, pk=course_id)
+    submission = Submission.objects.create(
+        user=request.user,
+        course=course
+    )
+
+    for key, value in request.POST.items():
+        if key.startswith('choice_'):
+            choice = Choice.objects.get(id=value)
+            submission.choices.add(choice)
+
+    return show_exam_result(request, course_id, submission.id)
+
+@login_required
+def show_exam_result(request, course_id, submission_id):
+    submission = get_object_or_404(Submission, pk=submission_id)
+    questions = Question.objects.filter(course_id=course_id)
+
+    total_score = 0
+    possible_score = 0
+
+    for question in questions:
+        possible_score += question.grade
+        if question.is_get_score(submission):
+            total_score += question.grade
 
     context = {
-        'correct_count': correct_count,
-        'total_score': total_score,
-        'total_questions': total_questions
+        'grade': total_score,
+        'possible_grade': possible_score
     }
 
-    return render(request, 'exam_result.html', context)
+    return render(request, 'onlinecourse/exam_result_bootstrap.html', context)
